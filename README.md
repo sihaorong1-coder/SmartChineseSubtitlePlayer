@@ -213,9 +213,11 @@ git push -u origin main
 
 ### 4.7 安装到 iPhone 真机
 
-CI 已自动同时运行两个 Job：
-- `Simulator Build` → 产物 `SmartChineseSubtitlePlayer-Simulator.zip`
-- `Device Archive` → 产物 `SmartChineseSubtitlePlayer-Device-Archive.zip`
+CI 每次 push 自动运行两个 Job：
+| Job | 产物 | 用途 |
+|-----|------|------|
+| 🔨 Simulator Build | `SmartChineseSubtitlePlayer-Simulator.zip` | 验证编译通过 |
+| 📱 Device .app | `SmartChineseSubtitlePlayer-Device.zip` | 真机 arm64，AltStore 侧载 |
 
 #### 方案 A：AltStore（免费，推荐）🧊
 
@@ -223,23 +225,22 @@ CI 已自动同时运行两个 Job：
 
 1. **Windows 上装 AltServer**
    - 下载：https://altstore.io → Windows 版
-   - 安装 iCloud（非商店版）：https://updates.cdn-apple.com/.../iCloudSetup.exe
-   - 安装 iTunes（非商店版）：https://www.apple.com/itunes/download/win64
+   - 安装 iCloud（非商店版）：[Apple 官方下载](https://support.apple.com/zh-cn/HT204283)
+   - 安装 iTunes（非商店版）：[Apple 官方下载](https://www.apple.com/itunes/download/win64)
 
 2. **iPhone 上装 AltStore**
    - USB 连 iPhone → 打开 AltServer（任务栏图标）
    - 点击图标 → Install AltStore → 选你的 iPhone
-   - 输入 Apple ID 邮箱和密码（仅用于签名，不会上传）
+   - 输入 Apple ID 邮箱和密码（仅本地签名，不上传）
 
 3. **下载产物**
-   - 打开 Actions 页面 → 最新成功的 Run
-   - 底部 Artifacts → 下载 `SmartChineseSubtitlePlayer-Device-Archive.zip`
-   - 解压 → 找到 `.xcarchive` → 进去 → `Products/Applications/` → 找到 `.app`
+   - CI 通过后 → Actions 页面 → 最新 Run → 底部 Artifacts
+   - 下载 `SmartChineseSubtitlePlayer-Device.zip` → 解压得 `.app`
 
 4. **安装到手机**
-   - 把 `.app` 文件夹用 AirDrop/邮件/微信传到 iPhone
-   - iPhone 打开 AltStore → My Apps → + 号 → 选择 `.app`
-   - 等待签名完成（约 30 秒）→ 桌面出现 App 图标
+   - 把 `.app` 文件夹发到 iPhone（微信文件传输助手 / 邮件附件）
+   - iPhone 打开 AltStore → My Apps → 点 + → 找到 `.app` → 签名安装
+   - 桌面出现 App 图标
 
 5. **首次打开**
    - iPhone 设置 → 通用 → VPN 与设备管理 → 信任你的 Apple ID

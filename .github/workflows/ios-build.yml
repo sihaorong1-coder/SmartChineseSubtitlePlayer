@@ -13,7 +13,7 @@ env:
 
 jobs:
   # ============================================================
-  # Job 1: 模拟器构建（始终运行，验证编译）
+  # Job 1: 模拟器构建（验证编译通过）
   # ============================================================
   build-simulator:
     name: 🔨 Simulator Build
@@ -65,14 +65,11 @@ jobs:
           retention-days: 7
 
   # ============================================================
-  # Job 2: 真机 Archive（手动触发或 push 时可选）
-  # 产物可在 Actions 页面的 Artifacts 下载，用 AltStore 签名安装
+  # Job 2: 真机 .app（不需签名，直接用 AltStore 侧载）
   # ============================================================
   build-device:
-    name: 📱 Device Archive
+    name: 📱 Device .app
     runs-on: macos-latest
-    # 同时触发：每次 push 都跑，不需要手动触发
-    # if: false  ← 如果不想每次 push 都跑 Archive，取消下面注释
 
     steps:
       - name: Checkout
@@ -89,102 +86,37 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
-      # ----------------------------------------------------------
-      # Step A: 无条件 Archive（不签名也能生成 .xcarchive）
-      # ----------------------------------------------------------
-      - name: Archive
+      - name: Build for Device
         run: |
-          xcodebuild archive \
+          xcodebuild \
             -project "${PROJECT_NAME}.xcodeproj" \
             -scheme "${SCHEME}" \
-            -destination 'generic/platform=iOS' \
-            -archivePath "./build/${PROJECT_NAME}.xcarchive" \
+            -sdk iphoneos \
             -configuration Release \
+            -derivedDataPath ./DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            DEVELOPMENT_TEAM="" 2>&1 | tail -30
+            build 2>&1 | tail -50
 
-          echo "--- checking .xcarchive ---"
-          ls -la "./build/${PROJECT_NAME}.xcarchive/Products/Applications/" 2>/dev/null || echo "No .app in archive"
-
-      # ----------------------------------------------------------
-      # Step B: 如果配置了证书 Secrets，导出签名 IPA
-      # ----------------------------------------------------------
-      - name: Setup Signing (optional)
-        id: signing
+      - name: Package .app
         run: |
-          if [ -z "${{ secrets.P12_CERTIFICATE_BASE64 }}" ]; then
-            echo "SKIP_SIGNING=true" >> $GITHUB_OUTPUT
-            echo "⚠️  未配置签名证书，将跳过 IPA 导出"
-            echo "   产物仅包含 .xcarchive（可用 AltStore 侧载 .app）"
-          else
-            echo "SKIP_SIGNING=false" >> $GITHUB_OUTPUT
-            echo "🔐 正在配置签名..."
-
-            KEYCHAIN_PATH="$RUNNER_TEMP/smartplayer.keychain-db"
-            security create-keychain -p "temp123" "$KEYCHAIN_PATH"
-            security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-            security unlock-keychain -p "temp123" "$KEYCHAIN_PATH"
-            security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
-
-            echo "${{ secrets.P12_CERTIFICATE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/cert.p12"
-            security import "$RUNNER_TEMP/cert.p12" \
-              -k "$KEYCHAIN_PATH" \
-              -P "${{ secrets.P12_PASSWORD }}" \
-              -T /usr/bin/codesign
-
-            security set-key-partition-list -S apple-tool:,apple: \
-              -s -k "temp123" "$KEYCHAIN_PATH"
-
-            mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-            echo "${{ secrets.MOBILEPROVISION_BASE64 }}" | base64 -d > \
-              ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
-
-            echo "✅ 签名配置完成"
+          APP=$(find ./DerivedData -name "${PROJECT_NAME}.app" -type d 2>/dev/null | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: No .app found"
+            exit 1
           fi
+          echo "App found: $APP"
+          echo "Contents:"
+          ls -la "$APP"
+          echo "Binary arch:"
+          file "$APP/${PROJECT_NAME}" 2>/dev/null || file "$APP"/*/Info.plist 2>/dev/null || true
+          zip -r "${PROJECT_NAME}-Device.zip" "$APP"
+          echo "Package size: $(du -sh ${PROJECT_NAME}-Device.zip | cut -f1)"
 
-      - name: Export IPA (signed)
-        if: steps.signing.outputs.SKIP_SIGNING != 'true'
-        run: |
-          cat > ExportOptions.plist << 'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-              <key>method</key>
-              <string>development</string>
-              <key>teamID</key>
-              <string>${{ secrets.DEVELOPMENT_TEAM }}</string>
-          </dict>
-          </plist>
-          PLIST
-
-          xcodebuild -exportArchive \
-            -archivePath "./build/${PROJECT_NAME}.xcarchive" \
-            -exportPath "./build/IPA" \
-            -exportOptionsPlist ExportOptions.plist 2>&1 | tail -10
-
-          echo "IPA: $(ls -lh ./build/IPA/*.ipa 2>/dev/null)"
-
-      # ----------------------------------------------------------
-      # 上传产物
-      # ----------------------------------------------------------
-      - name: Package .xcarchive
-        run: |
-          zip -r "${PROJECT_NAME}-Device.xcarchive.zip" "./build/${PROJECT_NAME}.xcarchive"
-
-      - name: Upload .xcarchive (可用于 AltStore)
+      - name: Upload Device .app
         uses: actions/upload-artifact@v4
         with:
-          name: "${{ env.PROJECT_NAME }}-Device-Archive"
-          path: "${{ env.PROJECT_NAME }}-Device.xcarchive.zip"
+          name: "${{ env.PROJECT_NAME }}-Device"
+          path: "${{ env.PROJECT_NAME }}-Device.zip"
           retention-days: 7
-
-      - name: Upload IPA (if signed)
-        if: steps.signing.outputs.SKIP_SIGNING != 'true' && success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: "${{ env.PROJECT_NAME }}-Signed.ipa"
-          path: ./build/IPA/*.ipa
-          retention-days: 30
