@@ -106,10 +106,6 @@
 		<string>en</string>
 	</array>
 
-	<!-- 最低系统版本 -->
-	<key>MinimumOSVersion</key>
-	<string>17.0</string>
-
 	<!-- TODO: 如需接入云端翻译 API，请在此处配置相应的 API Key -->
 	<!-- 建议将敏感信息存储在安全位置，不要硬编码在 plist 中 -->
 	<!--
