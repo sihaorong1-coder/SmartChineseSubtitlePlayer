@@ -213,18 +213,57 @@ git push -u origin main
 
 ### 4.7 安装到 iPhone 真机
 
-真机构建需要 Apple ID（年报费 ¥688 的开发者账号，或个人免费账号仅支持 7 天签名的开发证书）：
+CI 已自动同时运行两个 Job：
+- `Simulator Build` → 产物 `SmartChineseSubtitlePlayer-Simulator.zip`
+- `Device Archive` → 产物 `SmartChineseSubtitlePlayer-Device-Archive.zip`
 
-1. 配置 GitHub Secrets（Settings → Secrets and variables → Actions）：
-   - `P12_CERTIFICATE_BASE64` — 开发证书
-   - `P12_PASSWORD` — 证书密码
-   - `MOBILEPROVISION_BASE64` — 描述文件
-   - `KEYCHAIN_PASSWORD` — 临时密码（可任意设置）
-   - `DEVELOPMENT_TEAM` — 你的 Team ID
+#### 方案 A：AltStore（免费，推荐）🧊
 
-2. 将 `ios-build.yml` 中 `build-archive` job 的 `if: false` 改为 `if: true`
+不需要开发者账号，5 分钟搞定：
 
-3. Push → Build → 下载 .ipa → 通过 TestFlight 或 OTA 安装
+1. **Windows 上装 AltServer**
+   - 下载：https://altstore.io → Windows 版
+   - 安装 iCloud（非商店版）：https://updates.cdn-apple.com/.../iCloudSetup.exe
+   - 安装 iTunes（非商店版）：https://www.apple.com/itunes/download/win64
+
+2. **iPhone 上装 AltStore**
+   - USB 连 iPhone → 打开 AltServer（任务栏图标）
+   - 点击图标 → Install AltStore → 选你的 iPhone
+   - 输入 Apple ID 邮箱和密码（仅用于签名，不会上传）
+
+3. **下载产物**
+   - 打开 Actions 页面 → 最新成功的 Run
+   - 底部 Artifacts → 下载 `SmartChineseSubtitlePlayer-Device-Archive.zip`
+   - 解压 → 找到 `.xcarchive` → 进去 → `Products/Applications/` → 找到 `.app`
+
+4. **安装到手机**
+   - 把 `.app` 文件夹用 AirDrop/邮件/微信传到 iPhone
+   - iPhone 打开 AltStore → My Apps → + 号 → 选择 `.app`
+   - 等待签名完成（约 30 秒）→ 桌面出现 App 图标
+
+5. **首次打开**
+   - iPhone 设置 → 通用 → VPN 与设备管理 → 信任你的 Apple ID
+
+> ⚠️ 免费签名 **7 天有效**。到期前 iPhone 和电脑连同一 WiFi，AltServer 自动续签。
+
+#### 方案 B：Apple Developer 签名 IPA（更稳，有证书后）
+
+配置一次，后续每次 Push 自动出签名 IPA：
+
+1. **配置 GitHub Secrets**
+   
+   打开 https://github.com/sihaorong1-coder/SmartChineseSubtitlePlayer/settings/secrets/actions → New secret：
+   
+   | Secret 名 | 值 |
+   |----------|-----|
+   | `P12_CERTIFICATE_BASE64` | 开发证书 `.p12` 的 Base64 |
+   | `P12_PASSWORD` | 导出证书时设置的密码 |
+   | `MOBILEPROVISION_BASE64` | 描述文件的 Base64 |
+   | `DEVELOPMENT_TEAM` | Apple Developer Team ID |
+
+2. **Push → 自动构建** → 下载 `SmartChineseSubtitlePlayer-Signed.ipa`
+
+3. **安装**：AltStore 打开 .ipa / TestFlight / 蒲公英扫码
 
 ---
 
