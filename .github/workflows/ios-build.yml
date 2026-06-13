@@ -1,0 +1,223 @@
+# ============================================================
+# GitHub Actions CI/CD — iOS 自动构建流水线
+#
+# 触发条件：
+#   - push 到 main 分支 → 自动构建
+#   - 手动触发 (workflow_dispatch) → 在 GitHub Actions 页面操作
+#
+# 运行环境：macOS 15 (Apple Silicon runner, 免费/用量计费)
+#
+# 输出产物（Artifacts）：
+#   - 模拟器 .app（可用于本地测试，无需签名）
+#   - 真机 .ipa（需要配置证书后启用，注释中提供代码）
+# ============================================================
+
+name: 🍎 iOS Build
+
+on:
+  push:
+    branches:
+      - main
+    paths-ignore:
+      - "README.md"
+      - "SETUP_INSTRUCTIONS.md"
+      - ".gitignore"
+
+  pull_request:
+    branches:
+      - main
+
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: "构建类型"
+        required: true
+        type: choice
+        default: "simulator"
+        options:
+          - simulator
+          - archive
+
+env:
+  PROJECT_NAME: SmartChineseSubtitlePlayer
+  SCHEME: SmartChineseSubtitlePlayer
+  XCODEGEN_VERSION: "2.42.0"
+
+# ============================================================
+# Jobs
+# ============================================================
+jobs:
+  # ----------------------------------------------------------
+  # Job 1: 代码编译检查（验证代码能否通过编译）
+  # ----------------------------------------------------------
+  build-simulator:
+    name: 🔨 模拟器构建
+    runs-on: macos-15
+
+    steps:
+      # Step 1: 检出代码
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      # Step 2: 安装 XcodeGen
+      - name: ⚙️ Install XcodeGen
+        run: |
+          brew install xcodegen
+
+      # Step 3: 生成 .xcodeproj
+      - name: 🏗️ Generate Xcode Project
+        run: |
+          xcodegen generate
+          echo "✅ .xcodeproj generated"
+
+      # Step 4: 构建（模拟器）
+      - name: 🔨 Build for Simulator
+        run: |
+          xcodebuild \
+            -project "${PROJECT_NAME}.xcodeproj" \
+            -scheme "${SCHEME}" \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+            -configuration Debug \
+            -derivedDataPath ./DerivedData \
+            -resultBundlePath ./BuildResults/result.xcresult \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+          echo "✅ Build successful!"
+
+      # Step 5: 收集产物
+      - name: 📦 Package Simulator Build
+        run: |
+          APP_PATH=$(find ./DerivedData/Build/Products/Debug-iphonesimulator -name "*.app" | head -1)
+          if [ -n "$APP_PATH" ]; then
+            zip -r "${PROJECT_NAME}-Simulator.zip" "$APP_PATH"
+            echo "📦 Packaged: ${PROJECT_NAME}-Simulator.zip"
+          else
+            echo "⚠️  No .app found, skipping packaging"
+          fi
+
+      # Step 6: 上传产物
+      - name: 📤 Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-Simulator
+          path: ${{ env.PROJECT_NAME }}-Simulator.zip
+          retention-days: 7
+
+      # Step 7: 上传构建日志（调试用）
+      - name: 📤 Upload Build Log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Build-Logs
+          path: ./BuildResults/
+          retention-days: 3
+
+  # ----------------------------------------------------------
+  # Job 2: Archive 导出 IPA（真机使用 — 可选启用）
+  # 需要配置以下 Secrets：
+  #   - P12_CERTIFICATE_BASE64      (开发/发布证书 .p12 的 Base64)
+  #   - P12_PASSWORD                 (证书密码)
+  #   - MOBILEPROVISION_BASE64       (描述文件 .mobileprovision 的 Base64)
+  #   - KEYCHAIN_PASSWORD            (临时 Keychain 密码)
+  # ----------------------------------------------------------
+  build-archive:
+    name: 📱 真机 IPA 构建
+    runs-on: macos-15
+    if: false   # 👈 改为 true 启用真机构建
+    # if: github.event.inputs.build_type == 'archive' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: 📥 Checkout
+        uses: actions/checkout@v4
+
+      - name: ⚙️ Install XcodeGen
+        run: brew install xcodegen
+
+      - name: 🏗️ Generate Xcode Project
+        run: xcodegen generate
+
+      # -------- 证书配置（真机构建必需）--------
+      - name: 🔐 Setup Code Signing
+        run: |
+          # 创建临时 Keychain
+          KEYCHAIN_PATH="$RUNNER_TEMP/smartplayer.keychain-db"
+          KEYCHAIN_PASSWORD="${{ secrets.KEYCHAIN_PASSWORD }}"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # 添加到搜索列表
+          security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | sed 's/"//g')
+
+          # 导入证书
+          echo "${{ secrets.P12_CERTIFICATE_BASE64 }}" | base64 -d > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" \
+            -k "$KEYCHAIN_PATH" \
+            -P "${{ secrets.P12_PASSWORD }}" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security
+
+          # 允许 codesign 访问
+          security set-key-partition-list -S apple-tool:,apple: \
+            -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+
+          # 安装描述文件
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "${{ secrets.MOBILEPROVISION_BASE64 }}" | base64 -d > \
+            ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
+
+          echo "✅ Code signing configured"
+
+      # -------- Archive --------
+      - name: 📦 Archive
+        run: |
+          xcodebuild archive \
+            -project "${PROJECT_NAME}.xcodeproj" \
+            -scheme "${SCHEME}" \
+            -destination 'generic/platform=iOS' \
+            -archivePath "./build/${PROJECT_NAME}.xcarchive" \
+            -configuration Release \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ secrets.DEVELOPMENT_TEAM }}" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.PROVISIONING_PROFILE_NAME }}"
+
+      # -------- Export IPA --------
+      - name: 📱 Export IPA
+        run: |
+          # 创建 ExportOptions.plist
+          cat > ExportOptions.plist << EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>method</key>
+              <string>app-store</string>
+              <!-- 也可用: development, ad-hoc, enterprise -->
+              <key>teamID</key>
+              <string>${{ secrets.DEVELOPMENT_TEAM }}</string>
+              <key>provisioningProfiles</key>
+              <dict>
+                  <key>com.smartplayer.subtitleplayer</key>
+                  <string>${{ secrets.PROVISIONING_PROFILE_NAME }}</string>
+              </dict>
+          </dict>
+          </plist>
+          EOF
+
+          xcodebuild -exportArchive \
+            -archivePath "./build/${PROJECT_NAME}.xcarchive" \
+            -exportPath "./build/IPA" \
+            -exportOptionsPlist ExportOptions.plist
+
+          echo "✅ IPA exported"
+
+      - name: 📤 Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}.ipa
+          path: ./build/IPA/*.ipa
+          retention-days: 30

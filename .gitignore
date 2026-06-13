@@ -1,0 +1,86 @@
+# ============================================================
+# Git Ignore — SmartChineseSubtitlePlayer
+# ============================================================
+
+# ---- Xcode ----
+*.xcuserstate
+*.xcworkspace
+xcuserdata/
+DerivedData/
+*.moved-aside
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcresult
+build/
+Build/
+*.xcbkptlist
+
+# XcodeGen 生成的文件（CI 中生成，不用提交）
+# 如果想在本地也有 Xcode project，可以取消下面这行的注释
+# !SmartChineseSubtitlePlayer.xcodeproj/
+
+# Archive
+*.xcarchive
+
+# ---- CocoaPods ----
+Pods/
+Podfile.lock
+
+# ---- Swift Package Manager ----
+.build/
+.swiftpm/
+*.xcodeproj/xcshareddata/xcschemes/
+
+# ---- Carthage ----
+Carthage/Build/
+
+# ---- OS ----
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+
+# ---- Windows ----
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ---- Temporary Files ----
+*.tmp
+*.temp
+*.log
+
+# ---- Secrets (重要！) ----
+# 不要在 Git 中提交任何密钥文件
+*.p12
+*.mobileprovision
+Secrets/
+secrets/
+env.secrets
+*.private.key

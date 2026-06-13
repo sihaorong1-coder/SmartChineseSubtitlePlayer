@@ -1,0 +1,110 @@
+# ============================================================
+# Codemagic CI/CD 配置文件
+#
+# Codemagic 是专门为移动端设计的 CI/CD 平台：
+#   - 每月 500 分钟免费 macOS 构建时间
+#   - 比 GitHub Actions macOS runner 更稳定
+#   - 内置代码签名管理
+#
+# 使用方法：
+#   1. 将项目推送到 GitHub/GitLab/Bitbucket
+#   2. 在 https://codemagic.io 注册并连接仓库
+#   3. Codemagic 自动检测此文件并配置流水线
+# ============================================================
+
+workflows:
+
+  # ==========================================================
+  # Workflow 1: 模拟器构建（PR 检查）
+  # ==========================================================
+  smartplayer-pr-check:
+    name: PR Check — Simulator Build
+    instance_type: mac_mini_m1
+    max_build_duration: 30
+    environment:
+      xcode: edge          # 使用最新 Xcode
+    triggering:
+      events:
+        - pull_request
+      branch_patterns:
+        - pattern: main
+    scripts:
+      - name: Install XcodeGen
+        script: |
+          brew install xcodegen
+
+      - name: Generate Xcode project
+        script: |
+          xcodegen generate
+
+      - name: Build for iOS Simulator
+        script: |
+          xcodebuild \
+            -project "SmartChineseSubtitlePlayer.xcodeproj" \
+            -scheme "SmartChineseSubtitlePlayer" \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro' \
+            -configuration Debug \
+            -derivedDataPath ./DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+    artifacts:
+      - DerivedData/Build/Products/Debug-iphonesimulator/*.app
+
+  # ==========================================================
+  # Workflow 2: 真机 IPA 构建 + TestFlight 分发
+  # ==========================================================
+  smartplayer-distribution:
+    name: Distribution Build — TestFlight
+    instance_type: mac_mini_m1
+    max_build_duration: 60
+    environment:
+      xcode: edge
+    triggering:
+      events:
+        - push
+      branch_patterns:
+        - pattern: main
+      cancel_previous_builds: true
+    scripts:
+      - name: Install XcodeGen
+        script: brew install xcodegen
+
+      - name: Generate Xcode project
+        script: xcodegen generate
+
+      - name: Set build number
+        script: |
+          BUILD_NUMBER=$(($(git rev-list --count HEAD) + 1))
+          echo "Build: $BUILD_NUMBER"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" \
+            SmartChineseSubtitlePlayer/App/Info.plist
+
+      - name: Build ipa for distribution
+        script: |
+          xcodebuild archive \
+            -project "SmartChineseSubtitlePlayer.xcodeproj" \
+            -scheme "SmartChineseSubtitlePlayer" \
+            -archivePath "./build/SmartChineseSubtitlePlayer.xcarchive" \
+            -configuration Release
+    artifacts:
+      - build/ios/ipa/*.ipa
+    publishing:
+      # Codemagic 自动分发到 TestFlight
+      app_store_connect:
+        # 在 Codemagic 后台配置以下环境变量：
+        #   APP_STORE_CONNECT_ISSUER_ID
+        #   APP_STORE_CONNECT_KEY_IDENTIFIER
+        #   APP_STORE_CONNECT_PRIVATE_KEY
+        #   CERTIFICATE_PRIVATE_KEY
+        submit_to_testflight: true
+        # submit_to_app_store: false  # 生产发布改为 true
+
+      email:
+        recipients:
+          # TODO: 替换为你的邮箱
+          # - you@example.com
+        notify:
+          success: true
+          failure: true
