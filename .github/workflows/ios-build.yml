@@ -52,31 +52,49 @@ jobs:
   # ----------------------------------------------------------
   build-simulator:
     name: 🔨 模拟器构建
-    runs-on: macos-15
+    runs-on: macos-14
 
     steps:
       # Step 1: 检出代码
       - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      # Step 2: 安装 XcodeGen
+      # Step 2: 选择 Xcode 版本
+      - name: 🔧 Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.app/Contents/Developer
+          xcodebuild -version
+
+      # Step 3: 安装 XcodeGen
       - name: ⚙️ Install XcodeGen
         run: |
           brew install xcodegen
+          xcodegen --version
 
-      # Step 3: 生成 .xcodeproj
+      # Step 4: 生成 .xcodeproj
       - name: 🏗️ Generate Xcode Project
         run: |
           xcodegen generate
           echo "✅ .xcodeproj generated"
 
-      # Step 4: 构建（模拟器）
+      # Step 5: 解析模拟器设备 ID
+      - name: 📱 Resolve Simulator
+        run: |
+          SIM_RUNTIME=$(xcrun simctl list runtimes iOS -j | python3 -c "import sys,json; runtimes=json.load(sys.stdin)['runtimes']; print([r['identifier'] for r in runtimes if r['isAvailable']][-1])")
+          SIM_DEVICE=$(xcrun simctl list devices iPhone available -j | python3 -c "import sys,json; devices=json.load(sys.stdin)['devices']; import itertools; all_devices=list(itertools.chain(*devices.values())); iphones=[d for d in all_devices if 'iPhone' in d['name']]; iphones.sort(key=lambda d:d['name']); print(iphones[-1]['udid'] if iphones else '')")
+          echo "SIM_RUNTIME=$SIM_RUNTIME"
+          echo "SIM_DEVICE=$SIM_DEVICE"
+          echo "SIM_RUNTIME=$SIM_RUNTIME" >> $GITHUB_ENV
+          echo "SIM_DEVICE=$SIM_DEVICE" >> $GITHUB_ENV
+
+      # Step 6: 构建（模拟器）
       - name: 🔨 Build for Simulator
         run: |
+          mkdir -p ./BuildResults
           xcodebuild \
             -project "${PROJECT_NAME}.xcodeproj" \
             -scheme "${SCHEME}" \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+            -destination "platform=iOS Simulator,id=${SIM_DEVICE}" \
             -configuration Debug \
             -derivedDataPath ./DerivedData \
             -resultBundlePath ./BuildResults/result.xcresult \
@@ -124,7 +142,7 @@ jobs:
   # ----------------------------------------------------------
   build-archive:
     name: 📱 真机 IPA 构建
-    runs-on: macos-15
+    runs-on: macos-14
     if: false   # 👈 改为 true 启用真机构建
     # if: github.event.inputs.build_type == 'archive' && github.ref == 'refs/heads/main'
 

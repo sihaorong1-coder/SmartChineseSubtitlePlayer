@@ -1,5 +1,6 @@
 import SwiftUI
 import AVKit
+import AVFoundation
 
 /// 视频播放器视图
 /// 核心视频播放页面，包含播放器、字幕叠加层和控制界面

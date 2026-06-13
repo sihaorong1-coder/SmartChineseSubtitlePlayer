@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 // MARK: - String Language Detection
 
